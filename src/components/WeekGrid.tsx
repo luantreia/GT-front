@@ -121,8 +121,10 @@ export default function WeekGrid({
             </div>
             {days.map((d, idx) => (
               <div key={idx} className="p-1 text-center text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-                {dayNames[idx]}
-                <span className="ml-1 rounded-full bg-slate-100 px-1.5 py-0.5 text-[9px] font-medium text-slate-600">{d.getDate()}</span>
+                <div className="flex flex-col items-center gap-0.5 sm:flex-row sm:justify-center sm:gap-1">
+                  <span>{dayNames[idx]}</span>
+                  <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[9px] font-medium text-slate-600 sm:ml-1">{d.getDate()}</span>
+                </div>
               </div>
             ))}
           </div>
