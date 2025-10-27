@@ -92,7 +92,12 @@ export default function Lessons() {
   const minStartSlot = useMemo(() => roundToNextSlot(new Date()), [start])
 
   const stats = useMemo(() => {
-    const upcoming = lessons.filter(l => new Date(l.start) > new Date()).length
+    const now = new Date()
+    const next24h = new Date(now.getTime() + 24 * 60 * 60 * 1000)
+    const upcoming = lessons.filter(l => {
+      const start = new Date(l.start)
+      return start >= now && start <= next24h
+    }).length
     const completed = lessons.filter(l => l.status?.toLowerCase() === 'completada' || l.status?.toLowerCase() === 'completado').length
     return [
       {
