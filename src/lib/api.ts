@@ -1,4 +1,4 @@
-const BASE = '/api'
+const BASE = (import.meta.env.VITE_API_BASE ?? '/api').replace(/\/$/, '')
 
 export type Coach = { id: string; email: string; name: string; phone?: string }
 export type AuthResponse = { token: string; coach: Coach }
