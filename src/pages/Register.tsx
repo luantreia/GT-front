@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import SEO from '../components/ui/SEO'
 
 export default function Register() {
   const { register } = useAuth()
@@ -28,6 +29,10 @@ export default function Register() {
 
   return (
     <section className="mx-auto mt-16 grid w-full max-w-6xl gap-10 px-2 sm:px-4 lg:grid-cols-[1.5fr,1fr]">
+      <SEO 
+        title="Crear Cuenta" 
+        description="Únete a la plataforma líder para profesores de tenis. Digitaliza tu agenda, alumnos y pagos."
+      />
       <article className="rounded-surface bg-white/90 p-8 shadow-card">
         <div className="mb-8 space-y-3">
           <span className="inline-flex items-center gap-2 rounded-full bg-brand-50 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-brand-700">

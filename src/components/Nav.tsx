@@ -98,17 +98,17 @@ export default function Nav() {
 
   return (
     <header className={`sticky top-0 z-30 border-b border-slate-200 bg-white/80 shadow-surface backdrop-blur supports-[backdrop-filter]:bg-white/70 transition-transform duration-300 ${isHidden ? '-translate-y-full' : 'translate-y-0'}`}>
-      <div className="mx-auto flex w-full max-w-6xl items-center gap-4 px-4 py-3 md:px-6 lg:px-8">
+      <div className="mx-auto flex w-full max-w-6xl items-center gap-2 px-3 py-2 md:gap-4 md:px-6 lg:px-8">
         <Link
           to="/"
-          className="group flex items-center gap-3 rounded-full bg-white/70 px-3 py-2 text-lg font-semibold text-brand-700 transition hover:bg-brand-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-300"
+          className="group flex items-center gap-2 rounded-full bg-white/70 px-2 py-1.5 text-base font-semibold text-brand-700 transition hover:bg-brand-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-300 sm:gap-3 sm:px-3 sm:py-2 sm:text-lg"
         >
-          <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-brand-500/10 text-xl text-brand-600 transition group-hover:bg-brand-500/20">
+          <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-brand-500/10 text-lg text-brand-600 transition group-hover:bg-brand-500/20 sm:h-10 sm:w-10 sm:rounded-2xl sm:text-xl">
             🎾
           </span>
           <div className="flex flex-col leading-tight">
-            <span className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Panel</span>
-            <span>Gestión Tenis</span>
+            <span className="text-[9px] font-semibold uppercase tracking-[0.2em] text-slate-400 sm:text-xs">Panel</span>
+            <span className="text-sm sm:text-lg">Gestión Tenis</span>
           </div>
         </Link>
 
@@ -138,6 +138,12 @@ export default function Nav() {
                 className={({ isActive }) => `${baseLink} ${isActive ? activeLink : ''}`}
               >
                 Clases
+              </NavLink>
+              <NavLink
+                to="/settings"
+                className={({ isActive }) => `${baseLink} ${isActive ? activeLink : ''}`}
+              >
+                Configuración
               </NavLink>
               <div className="relative" ref={menuRef}>
                 <button

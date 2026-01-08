@@ -1,11 +1,17 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { api } from '../lib/api'
+import { api, Lesson, Student } from '../lib/api'
 import WeekGrid from '../components/WeekGrid'
+import DayGrid from '../components/DayGrid'
+import MonthGrid from '../components/MonthGrid'
 import LessonForm from '../components/LessonForm'
-
-type Lesson = { id: string; student: { name: string; email?: string; phone?: string }; start: string; end: string; status: string; notes?: string }
-
-type Student = { id: string; name: string }
+import LessonCard from '../components/LessonCard'
+import { PaymentModal } from '../components/PaymentModal'
+import { Modal } from '../components/ui/Modal'
+import { StatsGrid } from '../components/ui/StatsGrid'
+import { PageHeader } from '../components/ui/PageHeader'
+import { EmptyState } from '../components/ui/EmptyState'
+import { Button } from '../components/ui/Button'
+import SEO from '../components/ui/SEO'
 
 const HALF_HOUR_MINUTES = 30
 
@@ -80,14 +86,27 @@ export default function Lessons() {
   const [error, setError] = useState<string | null>(null)
 
   const [studentId, setStudentId] = useState('')
+  const [type, setType] = useState<'private' | 'group'>('private')
+  const [participants, setParticipants] = useState<Array<{ studentId: string; price?: number }>>([])
+  const [price, setPrice] = useState<number | undefined>(undefined)
+  const [pricingMode, setPricingMode] = useState<'per_lesson' | 'per_student'>('per_lesson')
   const [start, setStart] = useState('')
   const [end, setEnd] = useState('')
   const [notes, setNotes] = useState('')
+  const [location, setLocation] = useState('')
+  const [court, setCourt] = useState('')
+  const [capacity, setCapacity] = useState<number | undefined>(undefined)
+  const [status, setStatus] = useState<'scheduled' | 'cancelled' | 'completed'>('scheduled')
+  const [cancellationReason, setCancellationReason] = useState('')
+  const [attendance, setAttendance] = useState<Array<{ studentId: string; present: boolean; notes?: string }>>([])
+  const [additionalCoaches, setAdditionalCoaches] = useState<string[]>([])
   const [showModal, setShowModal] = useState(false)
   const [durationMinutes, setDurationMinutes] = useState<number>(HALF_HOUR_MINUTES)
   const [editingLesson, setEditingLesson] = useState<Lesson | null>(null)
   const [isQuickAdd, setIsQuickAdd] = useState(false)
   const [repeatWeeks, setRepeatWeeks] = useState<number>(0)
+  const [selectedLessonForPayment, setSelectedLessonForPayment] = useState<Lesson | null>(null)
+  const [viewMode, setViewMode] = useState<'day' | 'week' | 'month' | 'none'>('week')
 
   const minStartSlot = useMemo(() => roundToNextSlot(new Date()), [start])
 
@@ -122,9 +141,9 @@ export default function Lessons() {
     setLoading(true)
     setError(null)
     try {
-      const [ls, st] = await Promise.all([api.listLessons(), api.listStudents()])
+      const [ls, st] = await Promise.all([api.lessons.list(), api.students.list()])
       setLessons(ls)
-      setStudents(st.map(s => ({ id: s.id, name: s.name })))
+      setStudents(st)
     } catch (e: any) {
       setError(e.message)
     } finally {
@@ -157,27 +176,59 @@ export default function Lessons() {
       const endDate = addMinutes(startDate, durationMinutes)
       const startIso = startDate.toISOString()
       const endIso = endDate.toISOString()
-      await api.createLesson({ studentId, start: startIso, end: endIso, notes: notes || undefined })
-      if (repeatWeeks > 0) {
-        const tasks: Promise<any>[] = []
-        for (let w = 1; w <= repeatWeeks; w++) {
-          const dupStart = new Date(startDate)
-          dupStart.setDate(dupStart.getDate() + w * 7)
-          const dupEnd = addMinutes(dupStart, durationMinutes)
-          tasks.push(
-            api.createLesson({
-              studentId,
-              start: dupStart.toISOString(),
-              end: dupEnd.toISOString(),
-              notes: notes || undefined,
-            })
-          )
-        }
-        await Promise.all(tasks)
+      
+      const lessonData = {
+        type,
+        studentId: type === 'private' ? studentId : undefined,
+        participants: type === 'group' ? participants : undefined,
+        start: startIso,
+        end: endIso,
+        price,
+        pricingMode,
+        notes: notes || undefined,
+        location: location || undefined,
+        court: court || undefined,
+        capacity: capacity || undefined,
+        status: status || 'scheduled',
+        cancellationReason: cancellationReason || undefined,
+        attendance: attendance.length > 0 ? attendance : undefined,
+        additionalCoaches: additionalCoaches.length > 0 ? additionalCoaches : undefined
       }
+
+      if (editingLesson) {
+        await api.lessons.update(editingLesson.id, lessonData)
+      } else {
+        await api.lessons.create(lessonData)
+        if (repeatWeeks > 0) {
+          const tasks: Promise<any>[] = []
+          for (let w = 1; w <= repeatWeeks; w++) {
+            const dupStart = new Date(startDate)
+            dupStart.setDate(dupStart.getDate() + w * 7)
+            const dupEnd = addMinutes(dupStart, durationMinutes)
+            tasks.push(
+              api.lessons.create({
+                ...lessonData,
+                start: dupStart.toISOString(),
+                end: dupEnd.toISOString(),
+              })
+            )
+          }
+          await Promise.all(tasks)
+        }
+      }
+
       const { startSlot, endSlot } = getDefaultSlots()
       setStudentId('')
+      setParticipants([])
+      setPrice(undefined)
       setNotes('')
+      setLocation('')
+      setCourt('')
+      setCapacity(undefined)
+      setStatus('scheduled')
+      setCancellationReason('')
+      setAttendance([])
+      setAdditionalCoaches([])
       setStart(formatDateTimeLocal(startSlot))
       setEnd(formatDateTimeLocal(endSlot))
       setDurationMinutes(HALF_HOUR_MINUTES)
@@ -191,10 +242,53 @@ export default function Lessons() {
 
   async function remove(id: string) {
     if (!confirm('Eliminar clase?')) return
-    await api.deleteLesson(id)
+    await api.lessons.delete(id)
     await load()
     setShowModal(false)
     setEditingLesson(null)
+  }
+
+  async function handleRepeat(lesson: Lesson, weeks: number) {
+    try {
+      setLoading(true);
+      const startDate = new Date(lesson.start);
+      const endDate = new Date(lesson.end);
+
+      for (let i = 1; i <= weeks; i++) {
+        const newStart = new Date(startDate);
+        newStart.setDate(startDate.getDate() + (i * 7));
+        
+        const newEnd = new Date(endDate);
+        newEnd.setDate(endDate.getDate() + (i * 7));
+
+        await api.lessons.create({
+          type: lesson.type,
+          studentId: lesson.studentId,
+          participants: lesson.participants?.map(p => ({
+            studentId: p.studentId,
+            price: p.price
+          })),
+          start: newStart.toISOString(),
+          end: newEnd.toISOString(),
+          price: lesson.price,
+          pricingMode: lesson.pricingMode,
+          currency: lesson.currency,
+          location: lesson.location,
+          court: lesson.court,
+          capacity: lesson.capacity,
+          notes: lesson.notes,
+          status: 'scheduled'
+        });
+      }
+      
+      await load();
+      alert(`Se han programado ${weeks} clases adicionales.`);
+    } catch (err: any) {
+      console.error('Error al repetir clase:', err);
+      alert('Error al repetir la clase: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
   }
 
   // Los horarios se seleccionan desde la grilla; la duración se elige en el formulario
@@ -203,6 +297,22 @@ export default function Lessons() {
     const dt = new Date(slotStart)
     const nowMin = roundToNextSlot(new Date())
     const endDt = addMinutes(dt, HALF_HOUR_MINUTES)
+    
+    // Reset form state for new lesson
+    setStudentId('')
+    setParticipants([])
+    setPrice(undefined)
+    setNotes('')
+    setLocation('')
+    setCourt('')
+    setCapacity(undefined)
+    setStatus('scheduled')
+    setCancellationReason('')
+    setAttendance([])
+    setAdditionalCoaches([])
+    setType('private')
+    setPricingMode('per_lesson')
+
     if (dt < nowMin) {
       const adjusted = nowMin
       const adjustedEnd = addMinutes(adjusted, HALF_HOUR_MINUTES)
@@ -219,17 +329,27 @@ export default function Lessons() {
     setShowModal(true)
   }
 
-  function handleLessonClick(lesson: { id: string; student?: { name?: string }; start: string; end: string }) {
+  function handleLessonClick(lesson: Lesson) {
     // Prefill for edit
-    setEditingLesson(lesson as Lesson)
+    setEditingLesson(lesson)
     setStart(formatDateTimeLocal(new Date(lesson.start)))
     const startDate = new Date(lesson.start)
     const endDate = new Date(lesson.end)
     const diff = Math.max(30, Math.round((endDate.getTime() - startDate.getTime()) / 60000 / HALF_HOUR_MINUTES) * HALF_HOUR_MINUTES)
     setDurationMinutes(diff)
-    setNotes((lesson as any).notes || '')
-    const found = students.find(s => s.name === lesson.student?.name)
-    if (found) setStudentId(found.id)
+    setNotes(lesson.notes || '')
+    setLocation(lesson.location || '')
+    setCourt(lesson.court || '')
+    setCapacity(lesson.capacity)
+    setStatus(lesson.status || 'scheduled')
+    setCancellationReason(lesson.cancellationReason || '')
+    setAttendance(lesson.attendance || [])
+    setAdditionalCoaches(lesson.additionalCoaches || [])
+    setType(lesson.type || 'private')
+    setStudentId(lesson.studentId || '')
+    setParticipants(lesson.participants || [])
+    setPrice(lesson.price)
+    setPricingMode(lesson.pricingMode || 'per_lesson')
     setIsQuickAdd(false)
     setRepeatWeeks(0)
     setShowModal(true)
@@ -237,6 +357,22 @@ export default function Lessons() {
 
   function handleQuickAddClick() {
     const { startSlot, endSlot } = getDefaultSlots()
+    
+    // Reset form state for new lesson
+    setStudentId('')
+    setParticipants([])
+    setPrice(undefined)
+    setNotes('')
+    setLocation('')
+    setCourt('')
+    setCapacity(undefined)
+    setStatus('scheduled')
+    setCancellationReason('')
+    setAttendance([])
+    setAdditionalCoaches([])
+    setType('private')
+    setPricingMode('per_lesson')
+
     setStart(formatDateTimeLocal(startSlot))
     setEnd(formatDateTimeLocal(endSlot))
     setDurationMinutes(HALF_HOUR_MINUTES)
@@ -252,60 +388,136 @@ export default function Lessons() {
 
   return (
     <section className="space-y-10">
-      <header className="grid gap-6 rounded-surface bg-white/80 p-6 shadow-surface sm:grid-cols-[2fr,3fr]">
-        <div className="space-y-3">
-          <button
-            type="button"
-            onClick={handleQuickAddClick}
-            className="mb-3 inline-flex items-center gap-2 rounded-2xl bg-brand-500 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-brand-500/40 transition hover:bg-brand-400"
-          >
-            <span aria-hidden>＋</span> Agendar clase
-          </button>
-          <div className="space-y-1">
-            <h1 className="text-2xl font-semibold text-slate-900 sm:text-3xl">Clases</h1>
-            <p className="text-sm text-slate-600">
-              Programa, supervisa y ajusta las clases de tu academia con un calendario organizado y claro.
-            </p>
-          </div>
-        </div>
-        <div>
-          <div className="grid gap-4 sm:grid-cols-3">
-            {stats.map(item => (
-              <article key={item.label} className="rounded-2xl bg-white p-4 shadow-card">
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{item.label}</p>
-                <p className="mt-2 text-2xl font-semibold text-slate-900">{item.value}</p>
-                <p className="mt-1 text-xs text-slate-500">{item.description}</p>
-              </article>
-            ))}
-          </div>
-        </div>
-      </header>
-
-      <WeekGrid
-        className="rounded-surface bg-white p-4 shadow-card"
-        lessons={lessons}
-        onSlotClick={handleSlotClick}
-        onLessonClick={handleLessonClick}
-        startHour={6}
-        endHour={24}
-        stepMinutes={HALF_HOUR_MINUTES}
+      <SEO 
+        title="Agenda" 
+        description="Organiza tus clases de tenis, sigue el progreso de tus alumnos y gestiona tu disponibilidad."
       />
+      <PageHeader 
+        title="Clases"
+        subtitle="Programa, supervisa y ajusta las clases de tu academia con un calendario organizado y claro."
+        badge="Agenda"
+        actions={
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full">
+            <div className="flex w-full sm:w-auto bg-slate-100 p-1 rounded-xl border border-slate-200 overflow-x-auto custom-scrollbar shrink-0">
+              <button
+                onClick={() => setViewMode('day')}
+                className={`flex-1 px-3 py-2 text-[11px] sm:text-xs font-bold rounded-lg transition-all whitespace-nowrap ${
+                  viewMode === 'day' 
+                    ? 'bg-white text-brand-600 shadow-sm' 
+                    : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                Día
+              </button>
+              <button
+                onClick={() => setViewMode('week')}
+                className={`flex-1 px-3 py-2 text-[11px] sm:text-xs font-bold rounded-lg transition-all whitespace-nowrap ${
+                  viewMode === 'week' 
+                    ? 'bg-white text-brand-600 shadow-sm' 
+                    : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                Semana
+              </button>
+              <button
+                onClick={() => setViewMode('month')}
+                className={`flex-1 px-3 py-2 text-[11px] sm:text-xs font-bold rounded-lg transition-all whitespace-nowrap ${
+                  viewMode === 'month' 
+                    ? 'bg-white text-brand-600 shadow-sm' 
+                    : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                Mes
+              </button>
+              <button
+                onClick={() => setViewMode('none')}
+                className={`flex-1 px-3 py-2 text-[11px] sm:text-xs font-bold rounded-lg transition-all whitespace-nowrap ${
+                  viewMode === 'none' 
+                    ? 'bg-white text-brand-600 shadow-sm' 
+                    : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                Ocultar
+              </button>
+            </div>
+            <Button onClick={handleQuickAddClick} className="shadow-brand-500/20 w-full sm:w-auto py-3 shrink-0">
+              <span className="flex items-center justify-center gap-2">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+                </svg>
+                Agendar Clase
+              </span>
+            </Button>
+          </div>
+        }
+      />
+
+      <StatsGrid stats={stats} />
+
+      {viewMode === 'day' && (
+        <DayGrid
+          className="rounded-surface bg-white p-4 shadow-card"
+          lessons={lessons}
+          onSlotClick={handleSlotClick}
+          onLessonClick={handleLessonClick as any}
+          startHour={6}
+          endHour={24}
+          stepMinutes={HALF_HOUR_MINUTES}
+        />
+      )}
+
+      {viewMode === 'week' && (
+        <WeekGrid
+          className="rounded-surface bg-white p-4 shadow-card"
+          lessons={lessons}
+          onSlotClick={handleSlotClick}
+          onLessonClick={handleLessonClick as any}
+          startHour={6}
+          endHour={24}
+          stepMinutes={HALF_HOUR_MINUTES}
+        />
+      )}
+
+      {viewMode === 'month' && (
+        <MonthGrid
+          className="rounded-surface bg-white p-4 shadow-card"
+          lessons={lessons}
+          onSlotClick={handleSlotClick}
+          onLessonClick={handleLessonClick as any}
+        />
+      )}
 
       
 
       <div className="space-y-4">
         {loading ? (
-          <div className="rounded-surface bg-white/60 px-6 py-4 text-sm text-slate-600 shadow-surface">
-            Cargando clases...
+          <div className="flex flex-col items-center justify-center py-20 space-y-4">
+            <div className="w-10 h-10 border-4 border-brand-200 border-t-brand-600 rounded-full animate-spin"></div>
+            <p className="text-sm font-medium text-slate-500">Cargando clases...</p>
           </div>
         ) : error ? (
-          <div className="rounded-surface border border-red-200 bg-red-50 px-6 py-4 text-sm text-red-700 shadow-surface">
-            {error}
+          <div className="rounded-surface border border-red-100 bg-red-50/50 p-6 text-center shadow-surface">
+            <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-red-100 text-red-600">
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <h3 className="text-sm font-semibold text-red-900">Error al cargar</h3>
+            <p className="mt-1 text-sm text-red-700">{error}</p>
+            <Button variant="secondary" onClick={load} className="mt-4">
+              Reintentar
+            </Button>
           </div>
         ) : lessons.length === 0 ? (
-          <div className="rounded-surface bg-white px-6 py-10 text-center text-sm text-slate-600 shadow-surface">
-            No hay clases registradas todavía.
-          </div>
+          <EmptyState 
+            message="No hay clases registradas todavía"
+            description="Comienza agendando tu primera clase desde el botón superior."
+            action={
+              <Button onClick={handleQuickAddClick}>
+                Agendar Clase
+              </Button>
+            }
+          />
         ) : (
           <div className="space-y-6">
             <div className="flex items-center justify-between">
@@ -316,45 +528,14 @@ export default function Lessons() {
             </div>
             <ul className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
               {lessons.map(l => (
-                <li
+                <LessonCard
                   key={l.id}
-                  className="flex flex-col justify-between rounded-surface bg-white p-5 shadow-card"
-                >
-                  <div className="space-y-3">
-                    <div className="flex items-center gap-3">
-                      <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-brand-500/10 text-sm font-semibold text-brand-700">
-                        {l.student?.name?.charAt(0).toUpperCase() ?? '—'}
-                      </span>
-                      <div>
-                        <p className="text-base font-semibold text-slate-900">{l.student?.name || 'Sin alumno'}</p>
-                        <span className="inline-flex items-center rounded-chip bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">
-                          {l.status || 'Sin estado'}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="space-y-2 text-sm">
-                      <p className="flex items-center justify-between text-slate-600">
-                        <span className="font-medium text-slate-500">Inicio</span>
-                        <span>{new Date(l.start).toLocaleString()}</span>
-                      </p>
-                      <p className="flex items-center justify-between text-slate-600">
-                        <span className="font-medium text-slate-500">Fin</span>
-                        <span>{new Date(l.end).toLocaleString()}</span>
-                      </p>
-                      {l.notes && (
-                        <p className="rounded-2xl bg-slate-50 px-3 py-2 text-slate-600">
-                          {l.notes}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => remove(l.id)}
-                    className="mt-4 w-full rounded-2xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-medium text-red-600 transition hover:bg-red-100"
-                  >
-                    Eliminar
-                  </button>
-                </li>
+                  lesson={l}
+                  onEdit={handleLessonClick}
+                  onDelete={remove}
+                  onRegisterPayment={setSelectedLessonForPayment}
+                  onRepeat={handleRepeat}
+                />
               ))}
             </ul>
           </div>
@@ -362,71 +543,60 @@ export default function Lessons() {
       </div>
 
       {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-2 sm:p-4 overflow-y-auto">
-          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
-            <div className="mb-4 flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-slate-900">{editingLesson ? 'Editar clase' : 'Agregar clase'}</h3>
-              <button
-                type="button"
-                onClick={() => setShowModal(false)}
-                className="rounded-full px-3 py-1 text-sm font-medium text-slate-600 transition hover:bg-slate-100"
-              >
-                Cerrar
-              </button>
-            </div>
-            <LessonForm
-              students={students}
-              studentId={editingLesson ? '' : studentId}
-              onStudentChange={setStudentId}
-              start={start}
-              durationMinutes={durationMinutes}
-              onDurationChange={setDurationMinutes}
-              notes={notes}
-              onNotesChange={setNotes}
-              canEditStartTime={!!editingLesson}
-              canEditStartDateTime={isQuickAdd}
-              onStartChange={setStart}
-              onSubmit={async e => {
-                e.preventDefault()
-                if (editingLesson) {
-                  const startDate = new Date(start)
-                  const endDate = addMinutes(startDate, durationMinutes)
-                  await api.updateLesson(editingLesson.id, { start: startDate.toISOString(), end: endDate.toISOString(), notes: notes || undefined })
-                  if (repeatWeeks > 0) {
-                    const tasks: Promise<any>[] = []
-                    const studentIdForDup = studentId || (students.find(x => x.name === editingLesson.student?.name)?.id ?? '')
-                    for (let w = 1; w <= repeatWeeks; w++) {
-                      const dupStart = new Date(startDate)
-                      dupStart.setDate(dupStart.getDate() + w * 7)
-                      const dupEnd = addMinutes(dupStart, durationMinutes)
-                      tasks.push(
-                        api.createLesson({
-                          studentId: studentIdForDup,
-                          start: dupStart.toISOString(),
-                          end: dupEnd.toISOString(),
-                          notes: notes || undefined,
-                        })
-                      )
-                    }
-                    await Promise.all(tasks)
-                  }
-                  await load()
-                  setShowModal(false)
-                  setEditingLesson(null)
-                  setRepeatWeeks(0)
-                } else {
-                  await addLesson(e)
-                }
-              }}
-              submitLabel={editingLesson ? 'Guardar cambios' : 'Agregar clase'}
-              studentDisabled={!!editingLesson}
-              studentReadonlyLabel={editingLesson?.student?.name}
-              onDelete={editingLesson ? () => remove(editingLesson.id) : undefined}
-              onRepeat={setRepeatWeeks}
-              repeatWeeksSelected={repeatWeeks}
-            />
-          </div>
-        </div>
+        <Modal
+          isOpen={showModal}
+          onClose={() => setShowModal(false)}
+          title={editingLesson ? 'Editar clase' : 'Agregar clase'}
+        >
+          <LessonForm
+            students={students}
+            type={type}
+            onTypeChange={setType}
+            studentId={studentId}
+            onStudentChange={setStudentId}
+            participants={participants}
+            onParticipantsChange={setParticipants}
+            start={start}
+            onStartChange={setStart}
+            durationMinutes={durationMinutes}
+            onDurationChange={setDurationMinutes}
+            price={price}
+            onPriceChange={setPrice}
+            pricingMode={pricingMode}
+            onPricingModeChange={setPricingMode}
+            notes={notes}
+            onNotesChange={setNotes}
+            location={location}
+            onLocationChange={setLocation}
+            court={court}
+            onCourtChange={setCourt}
+            capacity={capacity}
+            onCapacityChange={setCapacity}
+            status={status}
+            onStatusChange={setStatus}
+            cancellationReason={cancellationReason}
+            onCancellationReasonChange={setCancellationReason}
+            attendance={attendance}
+            onAttendanceChange={setAttendance}
+            additionalCoaches={additionalCoaches}
+            onAdditionalCoachesChange={setAdditionalCoaches}
+            onSubmit={addLesson}
+            onDelete={editingLesson ? () => remove(editingLesson.id) : undefined}
+            submitLabel={editingLesson ? 'Actualizar' : 'Agendar'}
+          />
+        </Modal>
+      )}
+
+      {selectedLessonForPayment && (
+        <PaymentModal
+          lesson={selectedLessonForPayment}
+          students={students}
+          onClose={() => setSelectedLessonForPayment(null)}
+          onSuccess={() => {
+            setSelectedLessonForPayment(null)
+            load()
+          }}
+        />
       )}
     </section>
   )

@@ -1,21 +1,30 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { api } from '../lib/api'
-
-type Student = { id: string; name: string; phone?: string; email?: string }
+import { api, Student } from '../lib/api'
+import StudentForm from '../components/StudentForm'
+import StudentCard from '../components/StudentCard'
+import { Modal } from '../components/ui/Modal'
+import { Button } from '../components/ui/Button'
+import { StatsGrid } from '../components/ui/StatsGrid'
+import { PageHeader } from '../components/ui/PageHeader'
+import { EmptyState } from '../components/ui/EmptyState'
+import { StudentLessonsModal } from '../components/StudentLessonsModal'
+import { StudentPaymentsModal } from '../components/StudentPaymentsModal'
+import { PaymentModal } from '../components/PaymentModal'
+import SEO from '../components/ui/SEO'
 
 export default function Students() {
   const [students, setStudents] = useState<Student[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [name, setName] = useState('')
-  const [phone, setPhone] = useState('')
-  const [email, setEmail] = useState('')
+  
+  const [showAddModal, setShowAddModal] = useState(false)
   const [showEditModal, setShowEditModal] = useState(false)
+  const [showLessonsModal, setShowLessonsModal] = useState(false)
+  const [showPaymentsModal, setShowPaymentsModal] = useState(false)
+  const [showAddPaymentModal, setShowAddPaymentModal] = useState(false)
+  const [selectedStudent, setSelectedStudent] = useState<Student | null>(null)
   const [editStudent, setEditStudent] = useState<Student | null>(null)
-  const [editName, setEditName] = useState('')
-  const [editPhone, setEditPhone] = useState('')
-  const [editEmail, setEditEmail] = useState('')
-
+  
   const stats = useMemo(
     () => [
       {
@@ -41,7 +50,7 @@ export default function Students() {
     setLoading(true)
     setError(null)
     try {
-      const data = await api.listStudents()
+      const data = await api.students.list()
       setStudents(data)
     } catch (e: any) {
       setError(e.message)
@@ -54,136 +63,117 @@ export default function Students() {
     load()
   }, [])
 
-  async function addStudent(e: React.FormEvent) {
-    e.preventDefault()
-    try {
-      await api.createStudent({ name, phone: phone || undefined, email: email || undefined })
-      setName(''); setPhone(''); setEmail('')
-      await load()
-    } catch (e: any) {
-      alert(e.message)
-    }
+  async function handleAddStudent(data: any) {
+    await api.students.create(data)
+    await load()
+    setShowAddModal(false)
   }
 
   async function remove(id: string) {
     if (!confirm('Eliminar alumno?')) return
-    await api.deleteStudent(id)
+    await api.students.delete(id)
     await load()
   }
 
   function openEdit(s: Student) {
     setEditStudent(s)
-    setEditName(s.name)
-    setEditPhone(s.phone || '')
-    setEditEmail(s.email || '')
     setShowEditModal(true)
   }
 
-  async function saveEdit(e: React.FormEvent) {
-    e.preventDefault()
+  function openLessons(s: Student) {
+    setSelectedStudent(s)
+    setShowLessonsModal(true)
+  }
+
+  function openPayments(s: Student) {
+    setSelectedStudent(s)
+    setShowPaymentsModal(true)
+  }
+
+  function openAddPayment(s: Student) {
+    setSelectedStudent(s)
+    setShowAddPaymentModal(true)
+  }
+
+  async function handleSaveEdit(data: any) {
     if (!editStudent) return
+    await api.students.update(editStudent.id, data)
+    await load()
+    setShowEditModal(false)
+    setEditStudent(null)
+  }
+
+  async function handleSyncBalances() {
+    if (!confirm('¿Deseas recalcular todos los saldos? Esto sincronizará las clases y pagos registrados.')) return;
     try {
-      await api.updateStudent(editStudent.id, { name: editName, phone: editPhone || undefined, email: editEmail || undefined })
-      await load()
-      setShowEditModal(false)
-      setEditStudent(null)
+      await api.students.syncBalances();
+      await load();
+      alert('Saldos sincronizados con éxito');
     } catch (e: any) {
-      alert(e.message)
+      alert('Error al sincronizar: ' + e.message);
     }
   }
 
   return (
     <section className="space-y-10">
-      <header className="grid gap-6 rounded-surface bg-white/80 p-6 shadow-surface sm:grid-cols-[2fr,3fr]">
-        <div className="space-y-3">
-          <span className="inline-flex items-center gap-2 rounded-full bg-brand-50 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-brand-700">
-            Gestión
-          </span>
-          <div className="space-y-1">
-            <h1 className="text-2xl font-semibold text-slate-900 sm:text-3xl">Alumnos</h1>
-            <p className="text-sm text-slate-600">
-              Registra, visualiza y organiza la base de alumnos de tu academia con una vista clara y responsiva.
-            </p>
-          </div>
-        </div>
-        <div className="grid gap-4 sm:grid-cols-3">
-          {stats.map(item => (
-            <article key={item.label} className="rounded-2xl bg-white p-4 shadow-card">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{item.label}</p>
-              <p className="mt-2 text-2xl font-semibold text-slate-900">{item.value}</p>
-              <p className="mt-1 text-xs text-slate-500">{item.description}</p>
-            </article>
-          ))}
-        </div>
-      </header>
+      <SEO 
+        title="Alumnos" 
+        description="Gestiona tus alumnos, sus saldos, historias y pagos de forma centralizada."
+      />
+      <PageHeader 
+        title="Alumnos"
+        subtitle="Registra, visualiza y organiza la base de alumnos de tu academia."
+        badge="Gestión"
+        actions={
+          <>
+            <Button variant="secondary" onClick={handleSyncBalances} title="Recalcular saldos">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+            </Button>
+            <Button onClick={() => setShowAddModal(true)} className="shadow-brand-500/20">
+              <span className="flex items-center gap-2">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+                </svg>
+                Nuevo Alumno
+              </span>
+            </Button>
+          </>
+        }
+      />
 
-      <div className="grid gap-6 lg:grid-cols-[1.2fr,1fr]">
-        <div className="rounded-surface bg-white p-6 shadow-card">
-          <h2 className="text-lg font-semibold text-slate-900">Agregar alumno</h2>
-          <p className="mt-1 text-sm text-slate-600">Completa los datos para sumar un nuevo alumno al sistema.</p>
-
-          <form onSubmit={addStudent} className="mt-6 grid gap-4 sm:grid-cols-2">
-            <label className="sm:col-span-2 space-y-1 text-left">
-              <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Nombre</span>
-              <input
-                placeholder="Nombre completo"
-                value={name}
-                onChange={e => setName(e.target.value)}
-                required
-                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 shadow-inner focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand-200"
-              />
-            </label>
-            <label className="space-y-1 text-left">
-              <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Teléfono</span>
-              <input
-                placeholder="Opcional"
-                value={phone}
-                onChange={e => setPhone(e.target.value)}
-                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 shadow-inner focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand-200"
-              />
-            </label>
-            <label className="space-y-1 text-left">
-              <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Email</span>
-              <input
-                placeholder="correo@ejemplo.com"
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                type="email"
-                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 shadow-inner focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand-200"
-              />
-            </label>
-            <button
-              type="submit"
-              className="sm:col-span-2 rounded-2xl bg-brand-500 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-brand-500/40 transition hover:bg-brand-400"
-            >
-              Agregar alumno
-            </button>
-          </form>
-        </div>
-
-        <aside className="rounded-surface bg-white p-6 shadow-card">
-          <h2 className="text-lg font-semibold text-slate-900">Consejos rápidos</h2>
-          <ul className="mt-4 space-y-3 text-sm text-slate-600">
-            <li>Utiliza datos completos para optimizar la comunicación con los alumnos.</li>
-            <li>Crea etiquetas personalizadas desde el panel para segmentar grupos.</li>
-            <li>Sincroniza tus listas con campañas de email para avisos importantes.</li>
-          </ul>
-        </aside>
-      </div>
+      <StatsGrid stats={stats} />
 
       <div className="space-y-4">
         {loading ? (
-          <div className="rounded-surface bg-white/60 px-6 py-4 text-sm text-slate-600 shadow-surface">
-            Cargando alumnos...
+          <div className="flex flex-col items-center justify-center py-20 space-y-4">
+            <div className="w-10 h-10 border-4 border-brand-200 border-t-brand-600 rounded-full animate-spin"></div>
+            <p className="text-sm font-medium text-slate-500">Cargando alumnos...</p>
           </div>
         ) : error ? (
-          <div className="rounded-surface border border-red-200 bg-red-50 px-6 py-4 text-sm text-red-700 shadow-surface">
-            {error}
+          <div className="rounded-surface border border-red-100 bg-red-50/50 p-6 text-center shadow-surface">
+            <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-red-100 text-red-600">
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <h3 className="text-sm font-semibold text-red-900">Error al cargar</h3>
+            <p className="mt-1 text-sm text-red-700">{error}</p>
+            <Button variant="secondary" onClick={load} className="mt-4">
+              Reintentar
+            </Button>
           </div>
         ) : students.length === 0 ? (
-          <div className="rounded-surface bg-white px-6 py-10 text-center text-sm text-slate-600 shadow-surface">
-            Aún no hay alumnos registrados. ¡Agrega el primero!
-          </div>
+          <EmptyState 
+            message="Aún no hay alumnos registrados"
+            description="¡Agrega el primero para comenzar a gestionar tu academia!"
+            action={
+              <Button onClick={() => setShowAddModal(true)}>
+                Agregar Alumno
+              </Button>
+            }
+          />
         ) : (
           <div className="space-y-6">
             <div className="flex items-center justify-between">
@@ -194,99 +184,85 @@ export default function Students() {
             </div>
             <ul className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
               {students.map(s => (
-                <li key={s.id} className="flex flex-col justify-between rounded-surface bg-white p-5 shadow-card">
-                  <div className="space-y-3">
-                    <div className="flex items-center gap-3">
-                      <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-brand-500/10 text-sm font-semibold text-brand-700">
-                        {s.name.charAt(0).toUpperCase()}
-                      </span>
-                      <div>
-                        <p className="text-base font-semibold text-slate-900">{s.name}</p>
-                        <p className="text-xs text-slate-500">Alumno</p>
-                      </div>
-                    </div>
-                    <div className="space-y-2 text-sm">
-                      <p className="flex items-center justify-between text-slate-600">
-                        <span className="font-medium text-slate-500">Email</span>
-                        <span>{s.email ?? 'Sin registro'}</span>
-                      </p>
-                      <p className="flex items-center justify-between text-slate-600">
-                        <span className="font-medium text-slate-500">Teléfono</span>
-                        <span>{s.phone ?? 'Sin registro'}</span>
-                      </p>
-                    </div>
-                  </div>
-                  <div className="mt-4 grid grid-cols-2 gap-2">
-                    <button
-                      onClick={() => openEdit(s)}
-                      className="rounded-2xl border border-brand-200 bg-brand-50 px-4 py-2 text-sm font-medium text-brand-700 transition hover:bg-brand-100"
-                    >
-                      Editar
-                    </button>
-                    <button
-                      onClick={() => remove(s.id)}
-                      className="rounded-2xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-medium text-red-600 transition hover:bg-red-100"
-                    >
-                      Eliminar
-                    </button>
-                  </div>
-                </li>
+                <StudentCard 
+                  key={s.id} 
+                  student={s} 
+                  onEdit={openEdit} 
+                  onDelete={remove} 
+                  onViewLessons={openLessons}
+                  onViewPayments={openPayments}
+                  onAddPayment={openAddPayment}
+                />
               ))}
             </ul>
           </div>
         )}
       </div>
 
-      {showEditModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
-          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl">
-            <div className="mb-4 flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-slate-900">Editar alumno</h3>
-              <button
-                type="button"
-                onClick={() => { setShowEditModal(false); setEditStudent(null) }}
-                className="rounded-full px-3 py-1 text-sm font-medium text-slate-600 transition hover:bg-slate-100"
-              >
-                Cerrar
-              </button>
-            </div>
-            <form onSubmit={saveEdit} className="grid gap-4 sm:grid-cols-2">
-              <label className="sm:col-span-2 space-y-1 text-left">
-                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Nombre</span>
-                <input
-                  value={editName}
-                  onChange={e => setEditName(e.target.value)}
-                  required
-                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 shadow-inner focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand-200"
-                />
-              </label>
-              <label className="space-y-1 text-left">
-                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Teléfono</span>
-                <input
-                  value={editPhone}
-                  onChange={e => setEditPhone(e.target.value)}
-                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 shadow-inner focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand-200"
-                />
-              </label>
-              <label className="space-y-1 text-left">
-                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Email</span>
-                <input
-                  type="email"
-                  value={editEmail}
-                  onChange={e => setEditEmail(e.target.value)}
-                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 shadow-inner focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand-200"
-                />
-              </label>
-              <button
-                type="submit"
-                className="sm:col-span-2 rounded-2xl bg-brand-500 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-brand-500/40 transition hover:bg-brand-400"
-              >
-                Guardar cambios
-              </button>
-            </form>
-          </div>
-        </div>
+      {selectedStudent && (
+        <StudentLessonsModal
+          student={selectedStudent}
+          isOpen={showLessonsModal}
+          onClose={() => {
+            setShowLessonsModal(false)
+            setSelectedStudent(null)
+          }}
+        />
       )}
+
+      {selectedStudent && (
+        <StudentPaymentsModal
+          student={selectedStudent}
+          isOpen={showPaymentsModal}
+          onClose={() => {
+            setShowPaymentsModal(false)
+            setSelectedStudent(null)
+          }}
+        />
+      )}
+
+      {showAddPaymentModal && selectedStudent && (
+        <PaymentModal
+          initialStudentId={selectedStudent.id}
+          students={students}
+          onClose={() => {
+            setShowAddPaymentModal(false)
+            setSelectedStudent(null)
+          }}
+          onSuccess={() => {
+            setShowAddPaymentModal(false)
+            setSelectedStudent(null)
+            load()
+          }}
+        />
+      )}
+
+      <Modal
+        isOpen={showAddModal}
+        onClose={() => setShowAddModal(false)}
+        title="Nuevo Alumno"
+      >
+        <StudentForm 
+          onSubmit={handleAddStudent} 
+          submitLabel="Agregar alumno" 
+          onCancel={() => setShowAddModal(false)}
+        />
+      </Modal>
+
+      <Modal
+        isOpen={showEditModal}
+        onClose={() => { setShowEditModal(false); setEditStudent(null) }}
+        title="Editar alumno"
+      >
+        {editStudent && (
+          <StudentForm 
+            initialData={editStudent} 
+            onSubmit={handleSaveEdit} 
+            submitLabel="Guardar cambios" 
+            onCancel={() => { setShowEditModal(false); setEditStudent(null) }}
+          />
+        )}
+      </Modal>
     </section>
   )
 }

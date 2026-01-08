@@ -1,23 +1,32 @@
-# Getting Started with Create React App
+# Gestión Tenis - Frontend
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+Sistema integral de gestión para profesionales del tenis. Desarrollado con el stack MERN (React + Vite + Tailwind CSS).
 
-## Available Scripts
+## Características principales
+- 📅 **Agenda Inteligente**: Visualización por día, semana y mes.
+- 👥 **Gestión de Alumnos**: Seguimiento detallado, niveles y métricas.
+- 💰 **Control de Pagos**: Sistema de saldos, deudas y múltiples métodos de pago.
+- 🚀 **Performance**: Lazy loading, Suspense y tipado estricto con TypeScript.
+- 🔍 **SEO Técnico**: Metadatos dinámicos, Open Graph y Structured Data.
 
-In the project directory, you can run:
+## Tecnologías
+- React 19
+- Vite
+- Tailwind CSS 4
+- React Router 6.28
+- React Helmet Async (SEO)
 
-### `npm start`
+## Instalación
+```bash
+npm install
+npm run dev
+```
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
-
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
-
-### `npm test`
-
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+## Configuración
+Crea un archivo `.env` basado en `.env.example`:
+```env
+VITE_API_BASE=http://localhost:5000/api
+```
 
 ### `npm run build`
 

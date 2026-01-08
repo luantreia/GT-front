@@ -113,8 +113,8 @@ export default function WeekGrid({
         </div>
       </div>
 
-      <div className="overflow-x-hidden">
-        <div>
+      <div className="overflow-x-auto">
+        <div className="min-w-[600px] md:min-w-0">
           <div className="grid" style={{ gridTemplateColumns: '36px repeat(7, minmax(0, 1fr))' }}>
             <div className="sticky left-0 z-10 bg-white p-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
               Hora

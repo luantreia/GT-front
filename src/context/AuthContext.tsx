@@ -23,13 +23,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     token,
     coach,
     login: async (email, password) => {
-      const res = await api.login(email, password)
+      const res = await api.auth.login(email, password)
       localStorage.setItem('token', res.token)
       setToken(res.token)
       setCoach(res.coach)
     },
     register: async (email, password, name, phone) => {
-      const res = await api.register(email, password, name, phone)
+      const res = await api.auth.register(email, password, name, phone)
       localStorage.setItem('token', res.token)
       setToken(res.token)
       setCoach(res.coach)
